@@ -13,18 +13,26 @@ jobs:
         run: |
           pip install kaggle
           python - <<EOF
-          import requests
+          import subprocess
+          import os
+
+          # Write kaggle.json
           import json
+          kaggle_dir = os.path.expanduser("~/.kaggle")
+          os.makedirs(kaggle_dir, exist_ok=True)
+          with open(f"{kaggle_dir}/kaggle.json", "w") as f:
+              json.dump({
+                  "username": "${{ secrets.KAGGLE_USERNAME }}",
+                  "key": "${{ secrets.KAGGLE_KEY }}"
+              }, f)
+          os.chmod(f"{kaggle_dir}/kaggle.json", 0o600)
 
-          username = "${{ secrets.KAGGLE_USERNAME }}"
-          key = "${{ secrets.KAGGLE_KEY }}"
-
-          response = requests.post(
-              f"https://www.kaggle.com/api/v1/kernels/{username}/leads-hunter/run",
-              auth=(username, key),
-              headers={"Content-Type": "application/json"},
-              json={}
+          # Trigger kernel run
+          result = subprocess.run(
+              ["kaggle", "kernels", "run", "${{ secrets.KAGGLE_USERNAME }}/leads-hunter"],
+              capture_output=True, text=True
           )
-          print(f"Status: {response.status_code}")
-          print(f"Response: {response.text[:500]}")
+          print("STDOUT:", result.stdout)
+          print("STDERR:", result.stderr)
+          print("Return code:", result.returncode)
           EOF
