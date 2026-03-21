@@ -6,7 +6,8 @@ import random
 import smtplib
 import dns.resolver
 import requests
-from playwright.async_api import async_playwright
+from bs4 import BeautifulSoup
+from urllib.parse import quote
 from kaggle_secrets import UserSecretsClient
 
 nest_asyncio.apply()
@@ -21,19 +22,23 @@ START_TIME = time.time()
 SEVEN_HOURS = 7 * 3600
 ONE_HOUR = 1 * 3600
 
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36"
+}
+
 JUNK = [
     "example.com", "schema.org", "google.com", "microsoft.com",
     "bing.com", "jquery.com", "cloudflare.com", "amazonaws.com",
     "sentry.io", "wix.com", "wordpress.com", "squarespace.com",
     "apple.com", "youtube.com", "facebook.com", "twitter.com",
     "instagram.com", "tiktok.com", "linkedin.com", "w3.org",
-    "duckduckgo.com", "maps.google.com"
+    "duckduckgo.com", "maps.google.com", "gstatic.com", "googleapis.com"
 ]
 
 # ============================================================
-# 50+ DDG QUERIES
+# QUERIES
 # ============================================================
-DDG_QUERIES = [
+QUERIES = [
     '"HVAC company" "New York" "contact us"',
     '"solar energy company" "California" "email us"',
     '"plumbing services" "London" "contact"',
@@ -72,7 +77,6 @@ DDG_QUERIES = [
     '"auto repair shop" "Texas" "contact"',
     '"beauty salon" "London" "email us"',
     '"spa wellness center" "Dubai" "contact us"',
-    '"restaurant catering" "Toronto" "get in touch"',
     '"hotel management company" "Sydney" "contact"',
     '"travel agency" "New York" "email us"',
     '"printing company" "Chicago" "contact us"',
@@ -94,29 +98,24 @@ DDG_QUERIES = [
     '"manufacturing company" "Chicago" "email us"',
     '"food distribution company" "Miami" "contact us"',
     '"wholesale business" "Toronto" "get in touch"',
+    '"drone services company" "Dubai" "contact"',
+    '"3D printing company" "Sydney" "email us"',
 ]
 
 # ============================================================
-# EMAIL UTILITIES
+# UTILITIES
 # ============================================================
 def extract_emails(text):
     emails = re.findall(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-z]{2,}', text)
     return [e for e in set(emails) if not any(j in e for j in JUNK) and len(e) < 60]
 
-def verify_email_smtp(email):
-    try:
-        domain = email.split("@")[1]
-        records = dns.resolver.resolve(domain, "MX")
-        mx = str(records[0].exchange)
-        server = smtplib.SMTP(timeout=10)
-        server.connect(mx)
-        server.helo("verify.com")
-        server.mail("verify@verify.com")
-        code, _ = server.rcpt(email)
-        server.quit()
-        return code == 250
-    except:
-        return False
+def clean_phone(phone):
+    if not phone or phone == "N/A":
+        return "N/A"
+    cleaned = re.sub(r'[^\d+]', '', str(phone))
+    if len(cleaned) < 7:
+        return "N/A"
+    return cleaned
 
 def save_lead(email, phone, source, niche, location):
     payload = {
@@ -124,14 +123,14 @@ def save_lead(email, phone, source, niche, location):
         "title": "Business Owner",
         "location": location,
         "business_type": niche,
-        "source": source,
+        "source": source[:100],
         "email": email,
-        "phone": phone
+        "phone": clean_phone(phone)
     }
     try:
         res = requests.post(B2B_URL, json=payload, timeout=10)
         if "Added" in res.text:
-            print(f"    [SAVED] {email}")
+            print(f"    [SAVED] {email} | {clean_phone(phone)}")
             return True
         elif "Duplicate" in res.text:
             print(f"    [DUPLICATE] {email}")
@@ -146,7 +145,64 @@ def update_sheet(email, action):
         pass
 
 # ============================================================
-# WEBSITE EMAIL EXTRACTOR
+# BING SCRAPER
+# ============================================================
+def scrape_bing(query):
+    leads = []
+    try:
+        url = f"https://www.bing.com/search?q={quote(query)}&count=10"
+        res = requests.get(url, headers=HEADERS, timeout=15)
+        soup = BeautifulSoup(res.text, "html.parser")
+
+        urls = []
+        for cite in soup.select("cite"):
+            text = cite.text.strip()
+            if text.startswith("http"):
+                urls.append(text.split(" ")[0])
+            elif "." in text:
+                clean = text.split("›")[0].strip()
+                if clean:
+                    urls.append("https://" + clean)
+
+        urls = list(set(urls))
+        urls = [u for u in urls if "bing.com" not in u and "microsoft.com" not in u]
+        print(f"    [BING] URLs: {len(urls)}")
+
+        niche = query.split('"')[1] if '"' in query else query.split()[0]
+        location = query.split('"')[3] if len(query.split('"')) > 3 else "Global"
+
+        for site_url in urls[:6]:
+            try:
+                pages = [site_url] + [site_url.rstrip("/") + s for s in ["/contact", "/contact-us", "/about"]]
+                for page in pages:
+                    try:
+                        r = requests.get(page, headers=HEADERS, timeout=8)
+                        if r.status_code != 200:
+                            continue
+                        text = BeautifulSoup(r.text, "html.parser").get_text()
+                        emails = extract_emails(text)
+                        if emails:
+                            for email in emails:
+                                leads.append({
+                                    "email": email,
+                                    "phone": "N/A",
+                                    "source": site_url,
+                                    "niche": niche,
+                                    "location": location
+                                })
+                            break
+                    except:
+                        continue
+                time.sleep(random.uniform(1, 2))
+            except:
+                continue
+
+    except Exception as e:
+        print(f"    [BING ERROR] {e}")
+    return leads
+
+# ============================================================
+# WEBSITE EMAIL EXTRACTOR (Playwright)
 # ============================================================
 async def get_emails_from_website(page, url):
     suffixes = ["", "/contact", "/contact-us", "/about", "/about-us"]
@@ -164,68 +220,20 @@ async def get_emails_from_website(page, url):
     return []
 
 # ============================================================
-# DDG SCRAPER
-# ============================================================
-async def scrape_ddg(page, query):
-    leads = []
-    try:
-        url = f"https://duckduckgo.com/?q={requests.utils.quote(query)}&ia=web"
-        await page.goto(url, wait_until="domcontentloaded", timeout=15000)
-        await page.wait_for_timeout(random.randint(3000, 5000))
-
-        # Updated selectors
-        results = await page.query_selector_all("li[data-layout='organic']")
-        if not results:
-            results = await page.query_selector_all("div[data-testid='result']")
-        if not results:
-            results = await page.query_selector_all("div.nrn-react-div")
-
-        print(f"    DDG results: {len(results)}")
-
-        urls = []
-        all_links = await page.query_selector_all("a[href^='http']")
-        for a in all_links:
-            href = await a.get_attribute("href")
-            if href and href.startswith("http") and "duckduckgo" not in href:
-                urls.append(href)
-
-        urls = list(set(urls))[:8]
-        print(f"    DDG URLs: {len(urls)}")
-
-        for site_url in urls:
-            try:
-                emails = await get_emails_from_website(page, site_url)
-                if emails:
-                    niche = query.split('"')[1] if '"' in query else query.split()[0]
-                    location = query.split('"')[3] if len(query.split('"')) > 3 else "Global"
-                    for email in emails:
-                        leads.append({
-                            "email": email,
-                            "phone": "N/A",
-                            "source": site_url,
-                            "niche": niche,
-                            "location": location
-                        })
-                await page.wait_for_timeout(random.randint(1000, 2000))
-            except:
-                continue
-
-    except Exception as e:
-        print(f"    [DDG ERROR] {e}")
-    return leads
-
-# ============================================================
 # GOOGLE MAPS SCRAPER
 # ============================================================
 async def scrape_google_maps(page, query):
     leads = []
     try:
-        maps_url = f"https://www.google.com/maps/search/{requests.utils.quote(query)}"
+        maps_url = f"https://www.google.com/maps/search/{quote(query)}"
         await page.goto(maps_url, wait_until="domcontentloaded", timeout=15000)
         await page.wait_for_timeout(4000)
 
         listings = await page.query_selector_all("div.Nv2PK")
-        print(f"    Maps listings: {len(listings)}")
+        print(f"    [MAPS] Listings: {len(listings)}")
+
+        niche = query.split()[0]
+        location = " ".join(query.split()[1:])
 
         for i in range(min(len(listings), 8)):
             try:
@@ -239,17 +247,17 @@ async def scrape_google_maps(page, query):
                 await page.wait_for_timeout(2500)
 
                 phone_el = await page.query_selector("button[data-item-id*='phone']")
-                phone = await phone_el.get_attribute("aria-label") if phone_el else "N/A"
-                if phone and "Phone" in phone:
-                    phone = phone.replace("Phone:", "").strip()
+                phone = "N/A"
+                if phone_el:
+                    aria = await phone_el.get_attribute("aria-label")
+                    if aria:
+                        phone = re.sub(r'[^\d+]', '', aria)
 
                 website_el = await page.query_selector("a[data-item-id='authority']")
                 website = await website_el.get_attribute("href") if website_el else None
 
                 if website:
                     emails = await get_emails_from_website(page, website)
-                    niche = query.split()[0]
-                    location = " ".join(query.split()[1:])
                     for email in emails:
                         leads.append({
                             "email": email,
@@ -263,31 +271,43 @@ async def scrape_google_maps(page, query):
                 await page.wait_for_timeout(random.randint(1500, 3000))
 
             except Exception as e:
-                print(f"    [MAPS LISTING ERROR] {e}")
+                print(f"    [MAPS ERROR] {e}")
                 continue
 
     except Exception as e:
-        print(f"    [MAPS ERROR] {e}")
+        print(f"    [MAPS FATAL] {e}")
     return leads
 
 # ============================================================
-# VERIFICATION ENGINE
+# VERIFICATION
 # ============================================================
 def run_verification():
     print("\n[VERIFICATION] Fetching pending emails...")
     try:
         res = requests.get(B2B_URL, timeout=10)
         pending = res.json()
-        print(f"[VERIFICATION] {len(pending)} emails to verify")
+        print(f"[VERIFICATION] {len(pending)} pending")
         for item in pending:
             email = item if isinstance(item, str) else item.get("email", "")
             if not email:
                 continue
-            is_valid = verify_email_smtp(email)
-            if is_valid:
-                update_sheet(email, "update")
-                print(f"    [VALID] {email}")
-            else:
+            try:
+                domain = email.split("@")[1]
+                records = dns.resolver.resolve(domain, "MX")
+                mx = str(records[0].exchange)
+                server = smtplib.SMTP(timeout=10)
+                server.connect(mx)
+                server.helo("verify.com")
+                server.mail("verify@verify.com")
+                code, _ = server.rcpt(email)
+                server.quit()
+                if code == 250:
+                    update_sheet(email, "update")
+                    print(f"    [VALID] {email}")
+                else:
+                    update_sheet(email, "delete")
+                    print(f"    [REMOVED] {email}")
+            except:
                 update_sheet(email, "delete")
                 print(f"    [REMOVED] {email}")
             time.sleep(1)
@@ -298,16 +318,17 @@ def run_verification():
 # MAIN AGENT
 # ============================================================
 async def run_agent():
+    from playwright.async_api import async_playwright
+
+    queries = QUERIES.copy()
+    random.shuffle(queries)
+    query_index = 0
+    cycle = 0
+    agent_start = time.time()
+
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
         page = await browser.new_page()
-
-        queries = DDG_QUERIES.copy()
-        random.shuffle(queries)
-        query_index = 0
-
-        cycle = 0
-        agent_start = time.time()
 
         while (time.time() - agent_start) < SEVEN_HOURS:
             cycle += 1
@@ -315,24 +336,27 @@ async def run_agent():
             print(f"\n{'='*50}")
             print(f"[CYCLE {cycle}] Elapsed: {elapsed} mins")
 
-            # DDG Round
             query = queries[query_index % len(queries)]
             query_index += 1
-            print(f"[DDG] Query: {query}")
-            ddg_leads = await scrape_ddg(page, query)
-            for lead in ddg_leads:
+
+            # Bing Round
+            print(f"[BING] {query}")
+            bing_leads = scrape_bing(query)
+            for lead in bing_leads:
                 save_lead(lead["email"], lead["phone"],
                          lead["source"], lead["niche"], lead["location"])
+            print(f"[BING] Saved {len(bing_leads)} leads")
 
             await page.wait_for_timeout(random.randint(2000, 4000))
 
             # Maps Round
-            maps_query = query.replace('"', '').replace('contact us', '').replace('email us', '').strip()
-            print(f"[MAPS] Query: {maps_query}")
+            maps_query = re.sub(r'"', '', query).replace('contact us', '').replace('email us', '').replace('get in touch', '').replace('contact', '').strip()
+            print(f"[MAPS] {maps_query}")
             maps_leads = await scrape_google_maps(page, maps_query)
             for lead in maps_leads:
                 save_lead(lead["email"], lead["phone"],
                          lead["source"], lead["niche"], lead["location"])
+            print(f"[MAPS] Saved {len(maps_leads)} leads")
 
             wait = random.randint(30, 60)
             print(f"[WAIT] {wait}s")
@@ -342,18 +366,16 @@ async def run_agent():
 
     # Verification Phase
     print("\n" + "="*50)
-    print("[VERIFICATION PHASE] Running for 1 hour...")
+    print("[VERIFICATION PHASE] 1 hour...")
     verify_start = time.time()
     while (time.time() - verify_start) < ONE_HOUR:
         run_verification()
         time.sleep(300)
 
-    # Sleep
+    # Sleep then restart
     print("\n[SLEEP] 10 minutes...")
     time.sleep(600)
-
-    # Restart
-    print("\n[RESTART] Restarting agent...")
+    print("\n[RESTART]")
     asyncio.run(run_agent())
 
 if __name__ == "__main__":
