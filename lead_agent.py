@@ -171,24 +171,32 @@ async def scrape_ddg(page, query):
     try:
         url = f"https://duckduckgo.com/?q={requests.utils.quote(query)}&ia=web"
         await page.goto(url, wait_until="domcontentloaded", timeout=15000)
-        await page.wait_for_timeout(random.randint(2000, 4000))
+        await page.wait_for_timeout(random.randint(3000, 5000))
 
-        results = await page.query_selector_all("article[data-testid='result']")
+        # Updated selectors
+        results = await page.query_selector_all("li[data-layout='organic']")
+        if not results:
+            results = await page.query_selector_all("div[data-testid='result']")
+        if not results:
+            results = await page.query_selector_all("div.nrn-react-div")
+
         print(f"    DDG results: {len(results)}")
 
         urls = []
-        for result in results[:8]:
-            a = await result.query_selector("a[href]")
-            if a:
-                href = await a.get_attribute("href")
-                if href and href.startswith("http"):
-                    urls.append(href)
+        all_links = await page.query_selector_all("a[href^='http']")
+        for a in all_links:
+            href = await a.get_attribute("href")
+            if href and href.startswith("http") and "duckduckgo" not in href:
+                urls.append(href)
+
+        urls = list(set(urls))[:8]
+        print(f"    DDG URLs: {len(urls)}")
 
         for site_url in urls:
             try:
                 emails = await get_emails_from_website(page, site_url)
                 if emails:
-                    niche = query.split('"')[1]
+                    niche = query.split('"')[1] if '"' in query else query.split()[0]
                     location = query.split('"')[3] if len(query.split('"')) > 3 else "Global"
                     for email in emails:
                         leads.append({
