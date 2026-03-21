@@ -5,12 +5,12 @@ import re
 import random
 
 from kaggle_secrets import UserSecretsClient
-secrets = UserSecretsClient()
+user_secrets = UserSecretsClient()
 
 try:
-    B2B_URL = secrets.get_secret("B2B_SCRIPT_URL")
-    B2C_URL = secrets.get_secret("B2C_SCRIPT_URL")
-    SENDER_EMAIL = secrets.get_secret("SENDER_EMAIL")
+    B2B_URL = user_secrets.get_secret("B2B_SCRIPT_URL")
+    B2C_URL = user_secrets.get_secret("B2C_SCRIPT_URL")
+    SENDER_EMAIL = user_secrets.get_secret("SENDER_EMAIL")
 except Exception as e:
     print(f"⚠️ Secret Error: {e}")
     B2B_URL = None
