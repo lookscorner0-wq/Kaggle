@@ -148,10 +148,10 @@ def update_sheet(email, action):
 # BING SCRAPER
 # ============================================================
 def scrape_bing(query):
-    leads = []
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
     try:
         url = f"https://www.bing.com/search?q={quote(query)}&count=10"
-        res = requests.get(url, headers=HEADERS, timeout=15)
+        res = requests.get(url, headers=headers, timeout=15)
         soup = BeautifulSoup(res.text, "html.parser")
 
         urls = []
@@ -176,20 +176,15 @@ def scrape_bing(query):
                 pages = [site_url] + [site_url.rstrip("/") + s for s in ["/contact", "/contact-us", "/about"]]
                 for page in pages:
                     try:
-                        r = requests.get(page, headers=HEADERS, timeout=8)
+                        r = requests.get(page, headers=headers, timeout=8)
                         if r.status_code != 200:
                             continue
                         text = BeautifulSoup(r.text, "html.parser").get_text()
                         emails = extract_emails(text)
                         if emails:
                             for email in emails:
-                                leads.append({
-                                    "email": email,
-                                    "phone": "N/A",
-                                    "source": site_url,
-                                    "niche": niche,
-                                    "location": location
-                                })
+                                # Direct save — no collection
+                                save_lead(email, "N/A", site_url, niche, location)
                             break
                     except:
                         continue
@@ -199,8 +194,6 @@ def scrape_bing(query):
 
     except Exception as e:
         print(f"    [BING ERROR] {e}")
-    return leads
-
 # ============================================================
 # WEBSITE EMAIL EXTRACTOR (Playwright)
 # ============================================================
@@ -341,13 +334,7 @@ async def run_agent():
 
             # Bing Round
             print(f"[BING] {query}")
-            bing_leads = scrape_bing(query)
-            for lead in bing_leads:
-                save_lead(lead["email"], lead["phone"],
-                         lead["source"], lead["niche"], lead["location"])
-            print(f"[BING] Saved {len(bing_leads)} leads")
-
-            await page.wait_for_timeout(random.randint(2000, 4000))
+            scrape_bing(query)
 
             # Maps Round
             maps_query = re.sub(r'"', '', query).replace('contact us', '').replace('email us', '').replace('get in touch', '').replace('contact', '').strip()
@@ -357,12 +344,6 @@ async def run_agent():
                 save_lead(lead["email"], lead["phone"],
                          lead["source"], lead["niche"], lead["location"])
             print(f"[MAPS] Saved {len(maps_leads)} leads")
-
-            wait = random.randint(30, 60)
-            print(f"[WAIT] {wait}s")
-            await page.wait_for_timeout(wait * 1000)
-
-        await browser.close()
 
     # Verification Phase
     print("\n" + "="*50)
