@@ -80,7 +80,6 @@ def hunter(query, category):
     except Exception as e:
         print(f"⚠️ Search Error: {e}")
             
-            time.sleep(2) # Smooth writing gap
 
     except Exception as e:
         print(f"⚠️ Error: {e}")
