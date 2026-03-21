@@ -29,11 +29,11 @@ def generate_batch_queries(count=5):
         if mode == "B2B":
             n = random.choice(B2B_NICHES)
             l = random.choice(LOCATIONS)
-            queries.append(f'"{n}" {l} "contact us" "{domain}"')
+            queries.append({"query": f'"{n}" {l} "contact us" "{domain}"', "mode": "B2B"})
         else:
             n = random.choice(B2C_NICHES)
             p = random.choice(PLATFORMS)
-            queries.append(f'{p} "{n}" "{domain}"')
+            queries.append({"query": f'{p} "{n}" "{domain}"', "mode": "B2C"})
     return queries
 
 def extract_leads(text):
@@ -90,7 +90,7 @@ if __name__ == "__main__":
     while (time.time() - START_TIME) < SEVEN_HOURS:
         batch = generate_batch_queries(5)
         for q in batch:
-            hunter(q)
+            hunter(q["query"], q["mode"])
             # Slow & Smooth gap between queries
             wait = random.randint(45, 90)
             print(f"😴 Waiting {wait}s...")
