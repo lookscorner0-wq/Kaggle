@@ -13,6 +13,6 @@ jobs:
         run: |
           pip install kaggle
           curl -X POST \
-            -H "Authorization: Basic $(echo -n ${{ secrets.KAGGLE_USERNAME }}:${{ secrets.KAGGLE_KEY }} | base64)" \
+            -H "Authorization: Bearer ${{ secrets.KAGGLE_KEY }}" \
             -H "Content-Type: application/json" \
             https://www.kaggle.com/api/v1/kernels/${{ secrets.KAGGLE_USERNAME }}/leads-hunter/run
