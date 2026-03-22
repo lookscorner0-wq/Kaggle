@@ -15,7 +15,7 @@ from playwright.async_api import async_playwright
 # CONFIGURATION — EDIT THESE
 # ============================================================
 SHEET_URL = "YOUR_GOOGLE_APPS_SCRIPT_URL_HERE"
-CSV_FILE  = "leads_output.csv"
+B2B URL = "https://script.google.com/macros/s/AKfycbyQF4wMuCc2fUU-PFW7vrmHuDDUeJzsXYtQwyZC3d03THFYg01tqOuBtQ82qOfEDhqr/exec"
 
 RUN_HOURS     = 9        # Kaggle max runtime
 CYCLE_DELAY   = 45       # seconds between cycles
