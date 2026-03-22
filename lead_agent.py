@@ -1,3 +1,7 @@
+print("Installing Playwright and browsers...")
+os.system('pip install playwright')
+os.system('playwright install chromium')
+os.system('playwright install --with-deps chromium')
 import asyncio
 import nest_asyncio
 import re
