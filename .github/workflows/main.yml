@@ -1,30 +1,31 @@
-name: Trigger Kaggle Notebook
-
+name: Keep Kaggle Alive
 on:
   schedule:
-    - cron: '0 */9 * * *'
-  workflow_dispatch:
+    - cron: '0 */9 * * *' # Har 9 ghante baad chalega
+  workflow_dispatch: # Manual run ke liye
 
 jobs:
-  trigger:
+  update-kaggle:
     runs-on: ubuntu-latest
     steps:
-      - name: Trigger Kaggle Notebook
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: '3.x'
+
+      - name: Install Kaggle API
+        run: pip install kaggle
+
+      - name: Run Kaggle Kernel
+        env:
+          KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
+          KAGGLE_KEY: ${{ secrets.KAGGLE_KEY }}
         run: |
-          python - <<EOF
-          import requests
-          import json
-
-          username = "${{ secrets.KAGGLE_USERNAME }}"
-          key = "${{ secrets.KAGGLE_KEY }}"
-
-          response = requests.post(
-              "https://www.kaggle.com/api/v1/kernels/run",
-              auth=(username, key),
-              json={
-                  "id": f"{username}/leads-hunter"
-              }
-          )
-          print(f"Status: {response.status_code}")
-          print(f"Response: {response.text[:300]}")
-          EOF
+          mkdir ~/.kaggle
+          echo "{\"username\":\"$KAGGLE_USERNAME\",\"key\":\"$KAGGLE_KEY\"}" > ~/.kaggle/kaggle.json
+          chmod 600 ~/.kaggle/kaggle.json
+          # Notebook ko push/restart karne ki command
+          kaggle kernels push -p .
