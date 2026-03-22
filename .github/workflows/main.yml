@@ -24,8 +24,14 @@ jobs:
           KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
           KAGGLE_KEY: ${{ secrets.KAGGLE_KEY }}
         run: |
-          mkdir ~/.kaggle
+          mkdir -p ~/.kaggle
           echo "{\"username\":\"$KAGGLE_USERNAME\",\"key\":\"$KAGGLE_KEY\"}" > ~/.kaggle/kaggle.json
           chmod 600 ~/.kaggle/kaggle.json
-          # Notebook ko push/restart karne ki command
-          kaggle kernels push -p .
+          
+          # Check if metadata exists before pushing
+          if [ -f "kernel-metadata.json" ]; then
+            kaggle kernels push -p .
+          else
+            echo "Error: kernel-metadata.json not found in the root directory!"
+            exit 1
+          fi
