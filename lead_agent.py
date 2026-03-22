@@ -15,7 +15,7 @@ nest_asyncio.apply()
 # ============================================================
 # CONFIGURATION
 # ============================================================
-B2B_URL "https://script.google.com/macros/s/AKfycbyQF4wMuCc2fUU-PFW7vrmHuDDUeJzsXYtQwyZC3d03THFYg01tqOuBtQ82qOfEDhqr/exec"
+B2B_URL = "https://script.google.com/macros/s/AKfycbyQF4wMuCc2fUU-PFW7vrmHuDDUeJzsXYtQwyZC3d03THFYg01tqOuBtQ82qOfEDhqr/exec"
 print(f"Connecting to: {B2B_URL}") # Taake logs mein confirm ho jaye
 
 START_TIME = time.time()
