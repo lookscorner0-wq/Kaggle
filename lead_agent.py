@@ -324,7 +324,7 @@ async def run_agent():
     agent_start = time.time()
 
     async with async_playwright() as p:
-     browser = await p.chromium.launch(
+        browser = await p.chromium.launch(
             headless=True,
             args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"]
         )
