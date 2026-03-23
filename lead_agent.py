@@ -23,7 +23,7 @@ from playwright.async_api import async_playwright
 # ============================================================
 # CONFIGURATION
 # ============================================================
-B2B_URL       = "YOUR_GOOGLE_APPS_SCRIPT_URL_HERE"
+B2B_URL       = "https://script.google.com/macros/s/AKfycbxEPLWXNiA_uBFGRrpiTvYyrRUY9PPaN73hkRp8Jv33efPfFUJT09uVUpVPC0kuPJYf/exec"
 CSV_FILE      = "leads_output.csv"
 SCRAPE_HOURS  = 7
 VERIFY_HOURS  = 1
