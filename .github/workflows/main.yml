@@ -1,37 +1,73 @@
-name: Keep Kaggle Alive
+name: Leads Hunter — Auto Run
+
 on:
-  schedule:
-    - cron: '0 */9 * * *' # Har 9 ghante baad chalega
-  workflow_dispatch: # Manual run ke liye
+  push:
+    branches: [main]
+  workflow_dispatch:  # Manual trigger button on GitHub
 
 jobs:
-  update-kaggle:
+  run-kaggle:
     runs-on: ubuntu-latest
+    timeout-minutes: 600  # 10 hours workflow timeout
+
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v2
 
-      - name: Set up Python
-        uses: actions/setup-python@v2
+      # ── Step 1: Checkout repo ────────────────────────────
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      # ── Step 2: Python setup ─────────────────────────────
+      - name: Setup Python
+        uses: actions/setup-python@v4
         with:
-          python-version: '3.x'
+          python-version: "3.10"
 
-      - name: Install Kaggle API
+      # ── Step 3: Install Kaggle CLI ────────────────────────
+      - name: Install Kaggle CLI
         run: pip install kaggle
 
-      - name: Run Kaggle Kernel
-        env:
-          KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
-          KAGGLE_KEY: ${{ secrets.KAGGLE_KEY }}
+      # ── Step 4: Setup Kaggle credentials ─────────────────
+      - name: Setup Kaggle credentials
         run: |
           mkdir -p ~/.kaggle
-          echo "{\"username\":\"$KAGGLE_USERNAME\",\"key\":\"$KAGGLE_KEY\"}" > ~/.kaggle/kaggle.json
+          echo '{
+            "username": "${{ secrets.KAGGLE_USERNAME }}",
+            "key": "${{ secrets.KAGGLE_KEY }}"
+          }' > ~/.kaggle/kaggle.json
           chmod 600 ~/.kaggle/kaggle.json
-          
-          # Check if metadata exists before pushing
-          if [ -f "kernel-metadata.json" ]; then
-            kaggle kernels push -p .
+
+      # ── Step 5: Check if old session running → stop it ───
+      - name: Stop old session if running
+        run: |
+          echo "Checking kernel status..."
+          STATUS=$(kaggle kernels status ${{ secrets.KAGGLE_USERNAME }}/leads-hunter 2>&1 || echo "not_found")
+          echo "Status output: $STATUS"
+
+          if echo "$STATUS" | grep -q "running"; then
+            echo "Old session is RUNNING — stopping it..."
+            kaggle kernels cancel ${{ secrets.KAGGLE_USERNAME }}/leads-hunter
+            echo "Waiting 60s for kernel to fully stop..."
+            sleep 60
+            echo "Old session stopped."
+          elif echo "$STATUS" | grep -q "queued"; then
+            echo "Old session is QUEUED — cancelling..."
+            kaggle kernels cancel ${{ secrets.KAGGLE_USERNAME }}/leads-hunter
+            sleep 30
+            echo "Queued session cancelled."
           else
-            echo "Error: kernel-metadata.json not found in the root directory!"
-            exit 1
+            echo "No active session found — proceeding to push directly."
           fi
+
+      # ── Step 6: Push new kernel ───────────────────────────
+      - name: Push new kernel to Kaggle
+        run: |
+          echo "Pushing new kernel..."
+          kaggle kernels push -p ./kaggle/
+          echo "Kernel pushed successfully."
+
+      # ── Step 7: Wait and confirm running ─────────────────
+      - name: Confirm kernel started
+        run: |
+          echo "Waiting 30s for kernel to start..."
+          sleep 30
+          kaggle kernels status ${{ secrets.KAGGLE_USERNAME }}/leads-hunter
