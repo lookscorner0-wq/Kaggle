@@ -23,7 +23,7 @@ from playwright.async_api import async_playwright
 # ============================================================
 # CONFIGURATION
 # ============================================================
-B2B_URL       = "https://script.google.com/macros/s/AKfycbxEPLWXNiA_uBFGRrpiTvYyrRUY9PPaN73hkRp8Jv33efPfFUJT09uVUpVPC0kuPJYf/exec"
+B2B_URL       = "YOUR_GOOGLE_APPS_SCRIPT_URL_HERE"
 CSV_FILE      = "leads_output.csv"
 SCRAPE_HOURS  = 7
 VERIFY_HOURS  = 1
@@ -271,8 +271,9 @@ def save_lead(email, phone, source, niche, lead_type):
     domain = email.split("@")[1]
     if domain in DISPOSABLE_DOMAINS:
         return False
-    # Max 3 emails per domain
-    if DOMAIN_COUNT.get(domain, 0) >= 3:
+    # Max 2 emails per domain — prevent one site spamming sheet
+    if DOMAIN_COUNT.get(domain, 0) >= 2:
+        print(f"    [DOMAIN LIMIT] {domain}")
         return False
     DOMAIN_COUNT[domain] = DOMAIN_COUNT.get(domain, 0) + 1
     SAVED_EMAILS.add(email)
