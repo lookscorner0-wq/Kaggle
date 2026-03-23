@@ -150,6 +150,14 @@ HEADERS = {
 # ============================================================
 # EMAIL UTILITIES
 # ============================================================
+# Known fake placeholder patterns
+FAKE_PATTERNS = [
+    "firstname", "lastname", "yourname", "example",
+    "username", "youremail", "name@", "email@",
+    "firstinitial", "placeholder", "yourdomain",
+    "company.com", "domain.com", "website.com"
+]
+
 def extract_emails(text):
     raw     = re.findall(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-z]{2,}', text)
     cleaned = []
@@ -161,6 +169,9 @@ def extract_emails(text):
             continue
         prefix = e.split("@")[0]
         if any(prefix.startswith(j) for j in JUNK_PREFIXES):
+            continue
+        # Block fake placeholder emails
+        if any(fake in e for fake in FAKE_PATTERNS):
             continue
         cleaned.append(e)
     return cleaned
@@ -347,10 +358,15 @@ def scrape_ddg(query, lead_type="B2B"):
         )
         soup = BeautifulSoup(res.text, "html.parser")
         urls = []
-        for a in soup.select("a.result__a"):
-            href = a.get("href", "")
-            if href.startswith("http") and not any(j in href for j in JUNK_DOMAINS):
-                urls.append(href)
+        # Try multiple DDG selectors — they change often
+        for selector in ["a.result__a", "a.result__url", "h2 a", "a[href*='http']"]:
+            for a in soup.select(selector):
+                href = a.get("href", "")
+                if href.startswith("http") and not any(j in href for j in JUNK_DOMAINS):
+                    if "duckduckgo.com" not in href:
+                        urls.append(href)
+            if urls:
+                break
         urls  = list(set(urls))[:8]
         niche = query.split('"')[1] if '"' in query else query.split()[0]
         print(f"    [DDG] {len(urls)} URLs")
@@ -377,13 +393,24 @@ def scrape_yellowpages(query, location):
         print(f"    [YP] {len(listings)} listings")
         for listing in listings[:8]:
             try:
-                w  = listing.select_one("a.track-visit-website")
-                ph = listing.select_one("div.phones")
-                phone = ph.text.strip() if ph else "N/A"
+                w   = listing.select_one("a.track-visit-website")
+                ph  = listing.select_one("div.phones")
+                phone = clean_phone(ph.text.strip()) if ph else "N/A"
+                # Also try direct email on YP page
+                text = listing.get_text()
+                emails = extract_emails(text)
+                for email in emails:
+                    save_lead(email, phone, "yellowpages.com", query, "B2B")
+                    saved += 1
+                # Visit website
                 if w:
                     href = w.get("href", "")
                     if href.startswith("http"):
-                        saved += scrape_site(href, query, "B2B")
+                        r2     = requests.get(href, headers=HEADERS, timeout=10)
+                        emails = extract_emails(BeautifulSoup(r2.text, "html.parser").get_text())
+                        for email in emails:
+                            if save_lead(email, phone, href, query, "B2B"):
+                                saved += 1
             except Exception:
                 continue
             time.sleep(random.uniform(1, 2))
